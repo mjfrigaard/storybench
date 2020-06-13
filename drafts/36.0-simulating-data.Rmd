@@ -1,0 +1,395 @@
+---
+title: "How to create your own data in R"
+author: "Martin Frigaard"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+    toc_depth: 4
+---
+
+
+```{r setup, include=FALSE, echo=FALSE, cache=FALSE}
+# packages ----
+library(knitr)
+library(rmdformats)
+library(firasans)
+library(hrbrthemes)
+library(plotly)
+library(highcharter)
+library(tidyverse)
+library(janitor)
+library(colorblindr)
+library(ggforce)
+library(ggridges)
+knitr::opts_chunk$set(echo = TRUE)
+# project folders ----
+if (!file.exists("figs/")) {
+    dir.create("figs/")
+}
+# data folder
+if (!file.exists("data/")) {
+    dir.create("data/")
+}
+# app folder
+if (!file.exists("app/")) {
+    dir.create("app/")
+}
+## global options
+options(max.print="75")
+opts_chunk$set(prompt = FALSE,
+               error = TRUE,
+               tidy = FALSE,
+               comment = "#> ",
+               message = FALSE,
+               warning = FALSE,
+               echo = TRUE, 
+               fig.retina = 2, 
+               collapse = TRUE,
+               fig.path = "figs/", 
+               width=75)
+## global options ----
+base::options(max.print="500", 
+              tibble.width = Inf, 
+              scipen = 10000000)
+```
+
+```{r skim_minimal}
+skim_minimal <- function(dataset) {
+    x <- dataset
+    # new name for dataset
+    skimmed_x <- x %>% 
+        dplyr::select_if(is.numeric) %>% 
+        skimr::skim_to_wide()
+    # reduce this to the few we need
+    skim_minimal_tibble <- skimmed_x %>% 
+        dplyr::select(variable = skim_variable, 
+                      mean = numeric.mean,
+                      sd = numeric.sd,
+                      distribution = numeric.hist,
+                      median = numeric.p50, 
+                      min = numeric.p0, 
+                      max = numeric.p100)
+    return(skim_minimal_tibble)
+}
+# skim_minimal(dataset = diamonds)
+```
+
+
+
+# Simulating data
+
+Being able to create your data is incredibly handy if you're testing a new data visualization, building an application, checking modeling assumptions, etc. This post will cover how to create simulated variables and datasets using some of R's built in distribution functions.
+
+## Set a random seed 
+
+We use the `set.seed` function to ensure we'll be replicating pseudo-random numbers. [`set.seed`](https://stat.ethz.ch/R-manual/R-devel/library/base/html/Random.html) let's us manually set the [random seed](https://en.wikipedia.org/wiki/Random_seed), so you can reproduce whatever variables/data we simulate. 
+
+```{r set.seed}
+set.seed(3049)
+```
+
+## Create random numbers from a normal distribution
+
+The `rnorm()` function creates a set of random deviates (numbers). We can specify the `mean` and `sd` arguments, too. 
+
+```{r RNormSimData}
+simulated_sample <- 1e2
+# create sequence 
+seq_numbers <- tibble(seq_id = base::seq(simulated_sample))
+# create a normal distribution variable
+random_normal <- tibble(random_normal = stats::rnorm(n = simulated_sample))
+RNormSimData <- bind_cols(seq_numbers, random_normal)
+RNormSimData %>% skim_minimal()
+```
+ 
+I'm using a modified `skimr::skim_to_wide()` function (`skim_minimal`) because the little histograms are awesome, along with the descriptive statistics. If we increase the mean to 100, and lower the standard deviation to 2, we get the following variable:
+
+```{r rnorm_m1000_sd2}
+# create a normal distribution variable (mean = 100, sd = 2)
+rnorm_m100_sd2 <- tibble(rnorm_m100_sd2 = stats::rnorm(n = simulated_sample, mean = 100, sd = 2))
+RNormSimData <- bind_cols(RNormSimData, rnorm_m100_sd2)
+RNormSimData %>% skim_minimal()
+```
+
+We can see from the output that the new variable created from the `stats::rnorm()` function (`rnorm_m100_sd2`) still has a relatively bell-shaped distribution. The surprising thing is that the `min` and `max` are not ~`98` and ~`102`, but it's `95.95` and `104.97`. How is that possible?
+
+The standard deviation is the squared root of the variance, which is closer to the lower and upper limits of `rnorm_m100_sd2`. Check code below.
+
+```{r sd-versus-variance}
+# check the variance of random normal distribution variable (mean = 100, sd = 2)
+var(RNormSimData$rnorm_m100_sd2)
+# check the squared sd of random normal distribution variable (mean = 100, sd = 2)
+sd(RNormSimData$rnorm_m100_sd2)^2
+```
+
+Great! Now we're going to create two more variables with the following parameters:  
+
+- `rnorm_m50_sd10` has a mean of `50`, and standard deviation of `10`  
+- `rnorm_m25_sd100` has a mean of `25` and a standard deviation of `100`  
+
+```{r data-simulation}
+# create a normal distribution variable (mean = 50, sd = 10)
+rnorm_m50_sd10 <- tibble::tibble(rnorm_m50_sd10 = stats::rnorm(n = simulated_sample, 
+                                                               mean = 50, 
+                                                               sd = 10))
+# create a normal distribution variable (mean = 25, sd = 100)
+rnorm_m25_sd100 <- tibble::tibble(rnorm_m25_sd100 = stats::rnorm(n = simulated_sample, 
+                                                                 mean = 25, 
+                                                                 sd = 100))
+# bind cols
+RNormSimData <- dplyr::bind_cols(RNormSimData, 
+                                 rnorm_m50_sd10, 
+                                 rnorm_m25_sd100)
+# check
+RNormSimData %>% skim_minimal()
+```
+
+We can see some general patterns emerging: as the standard deviation gets larger relative to the mean, the spread of the data gets wider (compare `rnorm_m25_sd100` to `rnorm_m100_sd2`). 
+
+```{r}
+# create density from normal random
+density_normal <- tibble(density_normal = stats::dnorm(random_normal$random_normal))
+# create probability from normal random
+prob_normal <- tibble(prob_normal = stats::pnorm(random_normal$random_normal))
+# create a uniform distribution
+uniform <- tibble(uniform = stats::runif(simulated_sample))
+```
+
+```{r}
+qplot(x = rnorm_m1000_sd1, data = SimData)
+qplot(x = rnorm_m25_sd100, data = SimData)
+```
+
+
+`stats::runif()` uniform distribution on the interval from min to max
+
+```{r RuniformData}
+# Simulate a data frame
+n_sample <- 1e3
+RuniformData <- base::data.frame(a = base::seq(n_sample), 
+                                 b = stats::runif(n_sample))
+skimr::skim(RuniformData)
+```
+
+## Create data with a normal distribution
+
+The `rnorm` creates a 'random deviates' based on the `n`, `mean` and `sd`.  
+
+```{r the-rnorm}
+
+```
+
+
+> This is from the [R for Marketing Research and Analytics](http://r-marketing.r-forge.r-project.org/) text 
+
+This downloads the `CustomerData` data from the URL.
+
+```{r CustomerData}
+# assign clean names 
+CustomerData <- read_csv ("http://goo.gl/PmPkaG") %>% 
+  janitor::clean_names(case = "snake")
+CustomerData %>% dplyr::glimpse(78)
+```
+
+Set the number of stores and weeks. Here we have 10 weeks, and 3 years (in weeks).
+
+```{r stores}
+# data set represents observations of total sales by week for 2 products
+# at a chain of 10 stores
+k_stores <- 10
+k_weeks <- 52*3 # three years of data
+```
+
+Next we'll build a matrix, which gives us the dimensions we'll need for a tibble (rectangle).
+
+```{r CustMatrix}
+# build a matrix with the proper dimensions to hold the data
+CustMatrix <- base::matrix(NA, ncol = 10, nrow = k_stores*k_weeks)
+head(CustMatrix)
+dim(CustMatrix)
+```
+
+This is a 1560 row by 10 column matrix, but we'll convert this into a tibble.
+
+```{r}
+SimCustData <- tibble::as_tibble(CustMatrix)
+# add the names 
+names(SimCustData) <- c("store_num", "year", "week", "p1sales", 
+                            "p2sales", "p1price", "p2price", "p1prom",
+                            "p2prom", "country")
+SimCustData %>% glimpse(78)
+```
+
+Here we'll create two vectors for store numbers and cities.
+
+```{r cities-numbers}
+# create two vectors that will represent the store number and country for 
+# each observation:
+store_num <- 101:(100 + k_stores)
+store_cty20 <- c(rep("US" , 3), 
+               rep("DE" , 5), 
+               rep("GB" , 3), 
+               rep("BR" , 2), 
+               rep("JP" , 4), 
+               rep("AU" , 1), 
+               rep("CN" , 2))
+# check the length of the cities
+# 3+5+3+2+4+1+2
+# this needs to be 10, so we'll sample this to get it smarter
+store_cty10 <- base::sample(store_cty20, size = 10)
+```
+
+These should both be 10.
+
+```{r store_cty_samp}
+length(store_cty10)
+length(store_num)
+```
+
+Now we replace the appropriate columns in the data frame with those values, using `rep()` to expand the vectors to match the number of stores and weeks:
+
+```{r store_num-country}
+SimCustData$store_num <- rep(store_num, each = k_weeks)
+SimCustData$country <- rep(store_cty10, each = k_weeks)
+SimCustData %>% dplyr::glimpse(78)
+```
+
+Check the length of both the `week` and the `year` variables. Both of these should be `1560`. We can see the `k_stores*3` is 30, and `rep(1:52)` creates a vector that repeats 1 through 52, combine both of these and we get a vector with the length of `1560`.
+
+```{r check-}
+# check the 
+k_stores*3
+rep(1:52)
+length(rep(1:52, times = k_stores*3))
+```
+
+
+```{r week-var}
+# Next we do the same for the Week and Year columns:
+length(SimCustData$week)
+length(rep(1:52, times = k_stores*3))
+```
+
+We can assign this to the `SimCustData` tibble.
+
+```{r assign-week}
+SimCustData$week <- rep(1:52, times = k_stores*3)
+```
+
+We repeat this process for the `year` variable, but this one needs a little different math: first we `rep(1:2, each = k_weeks/2)`, 
+
+```{r rep-1-2}
+rep(1:2, each = k_weeks/2)
+```
+
+then we take the output and pass it to `rep(rep(1:2, each = k_weeks/2), times = k_stores)`
+
+```{r rep-rep-1-2-k_stores}
+rep(rep(1:2, each = k_weeks/2), times = k_stores)
+```
+
+We can see this repeats the pattern for `1560`.
+
+```{r year-var}
+length(SimCustData$year)
+length(rep(rep(1:2, each = k_weeks/2), times = k_stores))
+```
+
+```{r assign-year}
+SimCustData$year <- rep(rep(1:2, each = k_weeks/2), times = k_stores)
+SimCustData %>% dplyr::glimpse(78)
+```
+
+This is 1,560 rows and 10 columns.
+
+## Create factors 
+
+```{r country-store_num-as-factor}
+SimCustData$store_num <- factor(SimCustData$store_num)
+SimCustData$country <- factor(SimCustData$country)
+SimCustData %>% dplyr::glimpse(78)
+```
+
+## Simulating Data Points
+
+We complete `SimCustData` with random data for store-by-week observations of the sales, price, and promotional status of 2 products. 
+
+> If you don’t set a Pseudorandom number generators seed, R will select one for you, but you will get different random numbers each time you repeat the process. If you set the seed and execute commands in the order shown in this book, you will get the results that we show.
+
+```{r set.seed}
+set.seed(98250)
+```
+
+> Now we can draw the random data. In each row of data—that is, one week of one year, for one store—we set the status of whether each product was promoted (value 1) by drawing from the binomial distribution that counts the number of "heads" in a collection of coin tosses (where the coin can have any proportion of heads, not just 50%).
+
+## Set promotions
+
+> To detail that process: we use the `rbinom(n, size, p)` (decoded as "random binomial") function to draw from the binomial distribution. For every row of the store data, as noted by `n = nrow(SimCustData)`, we draw from a distribution representing the number of heads in a single coin toss (`size = 1`) with a coin that has probability `p = 0.1` for product 1 and `p = 0.15` for product 2. In other words, we randomly assigning 10% likelihood of promotion for product 1, and 15% likelihood for product 2.
+
+### Using the `rbinom()` function
+
+```{r rbinom}
+SimCustData$p1prom <- rbinom(n= nrow(SimCustData), size =1, p =0.1) # 10% promoted
+SimCustData$p2prom <- rbinom(n= nrow(SimCustData), size =1, p =0.15) # 15% promoted
+head(SimCustData)
+```
+
+## Set prices 
+
+> Next we set a price for each product in each row of the data. We suppose that each product is sold at one of five distinct price points ranging from `$2.19` to `$3.19` overall.
+
+> We randomly draw a price for each week by defining a vector with the five price points and using `sample(x, size, replace)` to draw from it as many times
+as we have rows of data (`size = nrow(SimCustData)`). The five prices are sampled many times, so we sample with replacement (`replace = TRUE`):
+
+```{r set-prices}
+SimCustData$p1price <- sample(x = c (2.19, 2.29, 2.49, 2.79, 2.99), 
+                                size = nrow(SimCustData), 
+                                replace = TRUE )
+SimCustData$p2price <- sample(x = c (2.29, 2.49, 2.59, 2.99, 3.19), 
+                                size = nrow(SimCustData), 
+                                replace = TRUE )
+head(SimCustData)
+```
+
+> Our last step is to simulate the sales figures for each week. We calculate sales as a function of the relative prices of the two products along with the promotional status of each.
+
+## The `rpois()` function (Poisson distribution)
+
+> Item sales are in unit counts, so we use the Poisson distribution to generate count data: `rpois(n, lambda)`, where `n` is the number of draws and `lambda` is the mean value of units per week. We draw a random Poisson count for each row (`nrow(SimCustData)`, and set the mean sales (`lambda`) of Product 1 to be higher than that of Product 2:
+
+```{r tmp_sales1-tmp_sales2}
+# sales data , using poisson (counts) distribution , rpois()
+# first, the default sales in the absence of promotion
+tmp_sales1 <- rpois(nrow(SimCustData), lambda =120)
+tmp_sales2 <- rpois(nrow(SimCustData), lambda =100)
+```
+
+## The `log()` function
+
+> We have assumed that sales vary as the inverse ratio of prices. That is, sales of Product 1 go up to the degree that the `log(price)` of Product 1 is lower than the `log(price)` of Product 2.
+
+```{r log-tmp_sales1-tmp_sales2}
+# scale sales according to the ratio of log ( price )
+# tmp_sales1 <- tmp.sales1*log(store.df$p2price)/log(store.df$p1price)
+tmp_sales1 <- tmp_sales1*log(SimCustData$p2price)/log(SimCustData$p1price)
+# tmp_sales2 <- tmp.sales2*log(store.df$p1price)/log(store.df$p2price)
+tmp_sales2 <- tmp_sales2*log(SimCustData$p1price)/log(SimCustData$p2price)
+```
+
+## The `floor()` function
+
+> Finally, we assume that sales get a 30% or 40% lift when each product is promoted in store. We simply multiply the promotional status vector (which comprises all `{0, 1}` values) by `0.3` or `0.4` respectively, and then multiply the sales vector by that. We use the `floor()` function to drop fractional values and ensure integer counts for weekly unit sales, and put those values into the data frame:
+
+```{r assign-p1sales}
+# final sales get a 30% or 40% lift when promoted
+SimCustData$p1sales <- floor(tmp_sales1*(1 + SimCustData$p1prom*0.3))
+SimCustData$p2sales <- floor(tmp_sales2*(1 + SimCustData$p2prom*0.4))
+```
+
+Do one final check with the `car::some()` command.
+
+```{r}
+SimCustData %>% car::some()
+```
+

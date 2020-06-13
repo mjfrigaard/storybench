@@ -1,0 +1,258 @@
+---
+title: "Update: How to geocode a csv of addresses in R"
+author: "Martin Frigaard"
+output: github_document
+---
+
+```{r setup, include=FALSE, warning=FALSE, message=FALSE}
+library(knitr)
+library(rmdformats)
+library(tidyverse)
+library(devtools)
+# figs folder
+if (!file.exists("figs")) {
+  dir.create("figs")
+}
+# chunk options
+knitr::opts_chunk$set(
+  echo = TRUE, # show/hide all code
+  tidy = FALSE, # cleaner code printing
+  comment = "#> ", # better console printing
+  eval = TRUE, # turn this to FALSE stop code chunks from running
+  message = TRUE, # show messages
+  warning = FALSE, # show warnings
+  size = "small", # size of the text
+  fig.path = "figs/", # location of files
+  fig.height = 5.5, # height of figures
+  fig.width = 8 # width of figures
+) # width of figures
+# knit options
+knitr::opts_knit$set(
+  width = 78,
+  progress = FALSE
+)
+# base options
+base::options(
+  tibble.print_max = 25,
+  tibble.width = 78,
+  max.print = "1000",
+  scipen = 100000000
+)
+options(max.print = 999999)
+```
+
+```{r load-packages, message=FALSE, warning=FALSE, echo=FALSE}
+library(tidyverse) # all tidyverse packages
+library(fivethirtyeight)
+library(ggrepel) # repel text overlay in graphs
+library(gridExtra) # arrange multiple plots
+library(grid) # text for graph title
+library(plotly) # more plots
+library(skimr) # summaries 
+library(hrbrthemes) # themes for graphs
+library(ggmap) # mapping
+```
+
+
+This post is an update from the previous post, ["How to geocode a CSV of addresses in R"](https://www.storybench.org/geocode-csv-addresses-r/). We will be using the [`ggmap`](https://github.com/dkahle/ggmap) package again, and be sure to investigate the usage and billing policy for [Google's Geocoding API](https://developers.google.com/maps/documentation/geocoding/usage-and-billing). 
+
+Check out our posts on getting started with [R & RStuido](https://www.storybench.org/getting-started-r-rstudio-notebooks/) and the other how-tos in the [Data Journalism with R project](https://www.storybench.org/category/data-journalism-in-r/).
+
+## The ggmap package in R Studio
+
+The code below will install and load the `ggmap` and [`tidyverse`](https://www.tidyverse.org/) packages. We've covered the `tidyverse` in previous posts, but all you need to know right now is that we'll be using the [`purrr` package](https://purrr.tidyverse.org/) for iteration. 
+
+```{r install.packages, eval=FALSE}
+install.packages(c("tidyverse", "ggmap"))
+library(tidyverse)
+library(ggmap)
+```
+
+## Import the data 
+
+In the previous post, we used a dataset of breweries in Boston, MA. In this post, we'll be using a subset of the data from the [Open Beer Database](https://data.opendatasoft.com/explore/dataset/open-beer-database%40public-us/information/), which we've downloaded as a CSV.
+
+The code below imports these data into RStudio as `BeerDataUS`. We'll use the `dplyr::glimpse()` function to take a look at these data. 
+
+```{r import-wrangle-BeerDataRaw, include=FALSE, eval=FALSE}
+BeerDataRaw <- readr::read_delim(file = "data/open-beer-database.csv", 
+                              delim = ";", 
+                              escape_double = FALSE, 
+                              trim_ws = TRUE)
+# limit to US 
+BeerDataUS <- BeerDataRaw %>% 
+        dplyr::filter(Country == "United States") %>% 
+        dplyr::select(Brewer, Address, City, State, Country, Website) %>% 
+        dplyr::distinct()
+BeerDataUS <- BeerDataUS %>% janitor::clean_names(case = "snake")
+# export
+readr::write_csv(x = BeerDataUS, path = "data/BeerDataUS.csv")
+```
+
+
+```{r import-BeerDataRaw, message=FALSE, warning=FALSE, echo=TRUE}
+BeerDataUS <- readr::read_csv(file = "data/BeerDataUS.csv")
+dplyr::glimpse(BeerDataUS)
+```
+
+We have a dataset with all the components of a physical address, but no latitude and longitude values. 
+
+## Setting up your GeoCoding API key
+
+Before we can use Google's geocode API, we need to set up an API key. Follow the instructions [here](https://github.com/dkahle/ggmap/) and [here](https://cran.r-project.org/web/packages/ggmap/ggmap.pdf), and you should get to this Google dashboard:
+
+```{r google-api-dashboard, echo=FALSE}
+knitr::include_graphics(path = "figs/google-api-dashboard.png")
+```
+
+Your **private** API key needs to be registered with `ggmap::register_google(key = "[your key]")`. More detailed instructions have been pasted below from the [package Github page](https://github.com/dkahle/ggmap/):
+
+> Inside R, after loading the new version of `ggmap`, you’ll need provide `ggmap` with your API key, a hash value (think string of jibberish) that authenticates you to Google’s servers. This can be done on a temporary basis with `register_google(key = "[your key]")` or permanently using `register_google(key = "[your key]", write = TRUE)` (note: this will overwrite your `~/.Renviron` file by replacing/adding the relevant line). If you use the former, know that you’ll need to re-do it every time you reset R.
+
+After registering your API key, you'll have access to the two functions for getting geocodes in `ggmap`: `geocode()` and `revgeocode()`.
+
+### Create a location column 
+
+We need the address items into a new `location` column: 
+
+```{r create-location, echo=TRUE}
+BeerDataUS <- BeerDataUS %>% 
+  tidyr::unite(data = ., 
+               # combine all the location elements 
+               address, city, state, country, 
+               # new name for variable
+               col = "location", 
+               # separated by comma
+               sep = ", ",
+               # keep the old columns
+               remove = FALSE)
+# check the new variable
+BeerDataUS %>% 
+  dplyr::pull(location) %>% 
+  utils::head()
+```
+
+
+We'll follow the iteration strategy from [Charlotte Wickham's tutorial on purrr](https://rstudio.com/resources/rstudioconf-2017/happy-r-users-purrr-tutorial-/).
+
+```{r purrr-strategy, echo=FALSE, out.width = "50%", out.height = "50%"}
+knitr::include_graphics(path = "figs/purrr-strategy.png")
+```
+
+## Get a geocode for a single element 
+
+This will produce the following output:
+
+```{r single_element, eval=FALSE}
+single_element <- base::sample(x = BeerDataUS$location, 
+                               size = 1, 
+                               replace = TRUE)
+single_element
+ggmap::geocode(location = single_element)
+```
+
+```
+> ggmap::geocode(location = single_element)
+Source : https://maps.googleapis.com/maps/api/geocode/json?address=NA,+Stillwater,+Minnesota,+United+States&key=xxx
+```
+
+```{r ggmap-geocode-output, echo=FALSE, out.width = "80%", out.height = "80%"}
+knitr::include_graphics(path = "figs/ggmap-geocode-output.png")
+```
+
+## Turn it into a recipe 
+
+Now we turn this into a `purrr::recipe`. We'll use the `purrr::map_df()` variant to get the result in a `tibble/data.frame`.
+
+```{r map_df, eval=FALSE}
+GeoCoded <- purrr::map_df(.x = BeerDataUS$location, .f = ggmap::geocode)
+```
+
+This will take some time, and you should see the following in the console:
+
+```{r ggmap-geocode-gif, echo=FALSE}
+knitr::include_graphics(path = "figs/ggmap-geocode-gif.gif")
+```
+
+When it's done, you'll have the following new dataset: 
+
+```{r import-GeoCoded, echo=FALSE, warning=FALSE, message=FALSE}
+# readr::write_csv(as.data.frame(GeoCoded), "data/GeoCoded.csv")
+GeoCoded <- readr::read_csv(file = "data/GeoCoded.csv")
+```
+
+```{r GeoCoded, eval=FALSE}
+utils::head(x = GeoCoded)
+```
+
+```r
+# A tibble: 6 x 2
+     lon   lat
+   <dbl> <dbl>
+1 -122.   47.9
+2 -122.   47.9
+3 -122.   48.0
+4 -122.   48.4
+5  -75.2  40.0
+6  -82.4  28.0
+```
+
+Now we just need to column bind these to the `BeerDataUS` dataset and create a new `popuptext` column. We'll also rename the `lon` column as `lng` because it's more common in the graphics we'll be building. 
+
+```{r GeoCodedBeerData, eval=TRUE}
+GeoCodedBeerData <- dplyr::bind_cols(BeerDataUS, GeoCoded) %>% 
+  dplyr::select(
+    brewer,
+    lng = lon,
+    lat,
+    dplyr::everything())
+# create a popuptext column
+GeoCodedBeerData <- GeoCodedBeerData %>%  
+  dplyr::mutate(popuptext = base::paste0("<b>", 
+                                 GeoCodedBeerData$brewer, 
+                                 "</b><br />",
+                                 "<i>",
+                                 GeoCodedBeerData$address, 
+                                 ", ", 
+                                 GeoCodedBeerData$city,
+                                 "</i><br />",
+                                 "<i>",
+                                 GeoCodedBeerData$state, 
+                                 "</i>"))
+```
+
+```{r head-GeoCodedBeerData, eval=FALSE, echo=TRUE}
+utils::head(GeoCodedBeerData)
+```
+
+```{r head-GeoCodedBeerData-png, echo=FALSE, out.width = "80%", out.height = "80%"}
+knitr::include_graphics(path = "figs/head-GeoCodedBeerData.png")
+```
+
+Now that we have a dataset with latitude and longitude columns, we can start mapping the data! 
+
+## Create a map
+
+We will use the [`leaflet` package](https://rstudio.github.io/leaflet/) to generate a quick map of brewery locations in the US. 
+
+```{r leaflet, eval=FALSE}
+# get a random lat and lng for the setView()
+# GeoCodedBeerData %>% 
+#   dplyr::sample_n(size = 1) %>% 
+#   dplyr::select(lat, lng)
+leaflet::leaflet(data = GeoCodedBeerData) %>% 
+  leaflet::addTiles() %>% 
+  leaflet::setView(lng = -96.50923, # random location
+                   lat = 39.19729, 
+                   zoom = 4) %>% # zoom in on US
+  leaflet::addCircles(color = "red",
+                      lng = ~lng, 
+                      lat = ~lat, 
+                      weight = 1.5,
+                      popup = ~popuptext)
+```
+
+
+```{r geocode-leaflet-output, eval=TRUE, echo=FALSE, out.width = "100%", out.height = "100%"}
+knitr::include_graphics(path = "figs/geocode-leaflet-output.png")
+```
