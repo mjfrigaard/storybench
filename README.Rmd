@@ -13,8 +13,8 @@ This is a series of tutorials from Data Journalism in R from [Storybench.org](ht
 crayon::strip_style(tidyverse::tidyverse_logo())
 ```
 
-```{r tidyverse2.1, echo=FALSE}
-knitr::include_graphics(path = "images/tidyverse2.1.png")
+```{r tidyverse-1200x484, echo=FALSE}
+knitr::include_graphics(path = "posts/images/tidyverse-1200x484.png")
 ```
 
 
@@ -38,10 +38,6 @@ https://rpubs.com/mjfrigaard/getting-started-r-rstudio-notebooks
 
 Updates: NA
 
-```{r notebooks, echo=FALSE}
-fs::dir_ls(regexp = "01")
-```
-
 ## 2) Getting Started with tidyverse in R
 
 slug: 02-getting-started-with-tidyverse-in-r
@@ -57,8 +53,8 @@ Updates: [Pivoting data from columns to rows (and back!) in the tidyverse](http:
 
 This new post covers the new pivoting functions.
 
-```{r tidyverse, echo=FALSE}
-fs::dir_ls(regexp = "02")
+```{r tidydata-group-pivot-long-wide, echo=FALSE}
+fs::dir_tree("posts/", regex = "tidydata-group-pivot-long-wide")
 ```
 
 ## 3) How to explore and manipulate a dataset from the fivethirtyeight package in R
@@ -91,11 +87,8 @@ This is the version that focuses on variables:
 
 https://rpubs.com/mjfrigaard/dplyr-vars-storybench
 
-
-
-
 ```{r dplyr, echo=FALSE}
-fs::dir_ls(regexp = "dplyr")
+fs::dir_tree("posts/", regexp = "dplyr")
 ```
 
 ## 5) Getting started with data visualization in R using ggplot2
@@ -107,7 +100,7 @@ Storybench post: [Getting started with data visualization in R using ggplot2](ht
 ### PDF version 
 
 ```{r ggplot-pdf, echo=FALSE}
-fs::dir_ls(path = "pdf", regexp = "ggplot")
+fs::dir_tree(path = "drafts/pdf", regexp = "ggplot")
 ```
 
 This is now a two-part intro. Part one is on Github (expanded a bit).
@@ -119,7 +112,7 @@ https://rpubs.com/mjfrigaard/getting-started-data-visualization-r-using-ggplot2
 updates(s):
 
 ```{r ggplot, echo=FALSE}
-fs::dir_ls(regexp = "ggplot")
+fs::dir_ls(path = "posts/", regexp = "ggplot")
 ```
 
 
@@ -166,7 +159,7 @@ Updates:
 
 Slug: 07-twitter-plus-r
 
-```{r create-06-welcome-to-data-journalism-in-r.Rmd}
+```{r create-07-twitter-plus-r.Rmd}
 if (!file.exists("07-twitter-plus-r.Rmd")) {
     file.create("07-twitter-plus-r.Rmd")
 }
@@ -177,8 +170,6 @@ Storybench post: [Twitter + R](http://www.storybench.org/twitter-r/)
 Accessing twitter with old twitter package. Now we use `rtweet`
 
 Updates: 
-
-
 
 ## 8) Sentiment analysis of (you guessed it!) Donald Trump’s tweets
 
@@ -340,10 +331,10 @@ Updates:
 
 Storybench post: [Pivoting data from columns to rows (and back!) in the tidyverse](http://www.storybench.org/pivoting-data-from-columns-to-rows-and-back-in-the-tidyverse/)
 
-There are two versions of this file, 2.1 and 2.4.
+There are two versions of this file, 25.1 and 25.4.
 
 ```{r pivot}
-fs::dir_ls(regexp = "pivot")
+fs::dir_tree(path = "posts/", regexp = "pivot")
 ```
 
 
@@ -367,7 +358,7 @@ Storybench post: [How to model with gradient boosting machine in R](http://www.s
 
 
 ```{r rideshare}
-fs::dir_ls(regexp = "rideshare")
+fs::dir_tree(path = "posts/", regexp = "rideshare")
 ```
 
 
@@ -380,7 +371,7 @@ Slug: 28-how-to-access-apis-in-r
 Storybench post: [How to access APIs in R](http://www.storybench.org/how-to-access-apis-in-r/)
 
 ```{r api-data}
-fs::dir_ls(regexp = "api")
+fs::dir_tree(path = "posts/", regexp = "api")
 ```
 
 Updates:
@@ -400,7 +391,7 @@ Slug: 30-how-to-build-a-website-with-blogdown-in-r
 Storybench post: [How to build a website with Blogdown in R](http://www.storybench.org/how-to-build-a-website-with-blogdown-in-r/)
 
 ```{r blogdown}
-fs::dir_ls(regexp = "blogdown")
+fs::dir_tree(path = "posts/", regexp = "blogdown")
 ```
 
 
@@ -418,7 +409,7 @@ Updates:
 ## 32) Web scraping with Python
 
 ```{r python}
-fs::dir_ls(regexp = "python")
+fs::dir_tree(path = "posts/", regexp = "python")
 ```
 
 
