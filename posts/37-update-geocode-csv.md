@@ -8,9 +8,16 @@ We will be using the [`ggmap`](https://github.com/dkahle/ggmap) package
 again, and be sure to investigate the usage and billing policy for
 [Google’s Geocoding
 API](https://developers.google.com/maps/documentation/geocoding/usage-and-billing).
+The API now has a [pay-as-you-go
+model](https://developers.google.com/maps/documentation/geocoding/usage-and-billing#how-usage-and-billing-work-under-the-pay-as-you-go-model),
+and every account gets a certain number of requests free per month,
+
+> For each billing account, for qualifying Google Maps Platform SKUs, a
+> $200 USD Google Maps Platform credit is available each month, and
+> automatically applied to the qualifying SKUs.
 
 Check out our posts on getting started with [R &
-RStuido](https://www.storybench.org/getting-started-r-rstudio-notebooks/)
+RStudio](https://www.storybench.org/getting-started-r-rstudio-notebooks/)
 and the other how-tos in the [Data Journalism with R
 project](https://www.storybench.org/category/data-journalism-in-r/).
 
