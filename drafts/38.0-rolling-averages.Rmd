@@ -70,64 +70,11 @@ library(forecast)
 
 The code block below imports the COVID-19 data from [Center for Systems Science and Engineering at the Johns Hopkins Whiting School of Engineering](https://github.com/CSSEGISandData/COVID-19) using the [`fs`](https://www.tidyverse.org/blog/2018/01/fs-1.0.0/) and [`purrr`](https://purrr.tidyverse.org/) packages. 
 
-```{r csse_csv_files}
-csse_csv_files <- fs::dir_ls(path = "data/jhsph/COVID-19/csse_covid_19_data/csse_covid_19_daily_reports_us", 
-                             glob = "*.csv")
-JHCovid19DataRaw <- csse_csv_files %>%
-  purrr::map_df(.f = read_csv, .id = "file", col_types = cols()) %>% 
-    janitor::clean_names(case = "snake")
-# head(JHSPH2019CovidData)
-# only need cases by state
-JHCovid19DataRaw %>% dplyr::glimpse()
-```
+### Wrangling steps 
 
-I'll also convert the `last_update` column to a `date` variable with some help from [`lubridate`](https://lubridate.tidyverse.org/).
+All the steps for wrangling these data are in this gist. We end up with a data frame that has 
 
-```{r convert-date}
-JHCovid19 <- JHCovid19DataRaw %>% 
-  dplyr::mutate(date = lubridate::as_date(last_update))
-```
-
-Next we'll get the state abbreviations by creating a crosswalk table and joining these with the `JHCovid19NewDeaths` dataset.
-
-```{r StateCrosswalk}
-StateCrosswalk <- tibble::tibble(state = state.name) %>%
-  # stick this to the abbreviations
-   dplyr::bind_cols(tibble::tibble(state_abbr = state.abb)) %>% 
-  # bind this to District of Columbia
-   dplyr::bind_rows(tibble(state = "District of Columbia", 
-                           state_abbr = "DC")) %>% 
-  dplyr::rename(province_state = state)
-head(StateCrosswalk)
-```
-Now we join the `state_abbr` column to `JHCovid19` and remove the non-states in the `JHCovid19States` dataset. 
-
-```{r JHCovid19NewDeathStates}
-JHCovid19States <- JHCovid19 %>% 
-                # join these two together
-                dplyr::inner_join(x = ., 
-                                 y = StateCrosswalk,
-                                 by = "province_state")
-# remove non-states
-JHCovid19States <- JHCovid19States %>% 
-    dplyr::filter(province_state %nin% c("American Samoa", "Diamond Princess", 
-                                         "Grand Princess", "Guam", 
-                                         "Northern Mariana Islands", 
-                                         "Puerto Rico", "Virgin Islands"))
-```
-
-Now we'll create new `month_abbr` and `day` variables, remove missing values, calculate the moving seven-day average per state, then limit these data to the month of May.
-
-```{r day-month_abbr}
-JHCovid19States <- JHCovid19States %>% 
-  # months
-  dplyr::mutate(month_abbr = lubridate::month(date, label = TRUE, 
-                                                 abbr = TRUE),
-                # day
-                day = lubridate::day(date)) %>% 
-  dplyr::rename(state = province_state) %>% 
-  dplyr::select(-c(file, country_region, uid, iso3))
-```
+`state` 
 
 ### State-level Johns Hopkins COVID data 
 
@@ -433,6 +380,12 @@ gg_facet_geo_deaths <- JHCovid19States %>%
 ```{r 38-gg_facet_geo_deaths, echo=FALSE}
 knitr::include_graphics("figs/38-gg_facet_geo_deaths.png")
 ```
+
+```{r}
+# export these data 
+write_csv(as.data.frame())
+```
+
 
 ### More notes on rolling/moving averages:
 
