@@ -45,8 +45,7 @@ base::options(
 
 ## Rolling averages
 
-Rolling (or moving) averages are a way to reduce noise and smooth time series data. This post will cover how to compute and visualize rolling averages for the new confirmed cases and deaths from COVID-19 in the United States.
-
+Rolling or moving averages are a way to reduce noise and smooth time series data. During the Covid-19 pandemic, rolling averages have been used by [researchers](https://ourworldindata.org/grapher/daily-covid-cases-3-day-average?yScale=log&time=2020-02-24..&country=European%20Union~USA) and [journalists](https://blog.datawrapper.de/covid19-corona-berlin-second-wave/) around the world to understand and visualize cases and deaths. This post will cover how to compute and visualize rolling averages for the new confirmed cases and deaths from Covid-19 in the United States.
 ## Packages
 
 
@@ -382,9 +381,10 @@ NewCasesTidy <- JHCovid19NewCasesJun %>%
     TRUE ~ NA_character_)) %>% 
   # reduce vars
   dplyr::select(day, 
-                date, 
+                date,
                 state, 
-                state_abbr, 
+                state_abbr,
+                new_confirmed_cases,
                 new_conf_av_value, 
                 new_conf_av_key)
 head(NewCasesTidy)
@@ -424,32 +424,43 @@ JHCovid19NewCasesJun %>%
 knitr::include_graphics("figs/38-gg_facet_col_line_geo_new_conf.png")
 ```
 
-We can also drop the y axis and columns to compare the means with `geom_line()`s.
+The plot below uses only raw `new_confirmed_cases` the 7-day averages with `geom_line()` and `geom_col()`.
 
-```{r}
+```{r gg_facet_col_line_geo_new_conf-v2, fig.width = 10, fig.height = 8, eval=FALSE}
+# get data for only 7-day average
+JHCovid19NewCasesJun7da <- JHCovid19NewCasesJun %>% 
+                          dplyr::select(day, new_conf_07da, state, state_abbr)
 # get min and max for labels
 min_date <- min(JHCovid19NewCasesJun$date, na.rm = TRUE)
 max_date <- max(JHCovid19NewCasesJun$date, na.rm = TRUE)
 JHCovid19NewCasesJun %>% 
     ggplot2::ggplot(aes(x = day, 
-                        y = new_conf_07da)) +
-    ggplot2::geom_line(color = "darkred") +  
+                      y = new_confirmed_cases)) +
+    geom_col(alpha = 2/10, linetype = 0) + 
+    ggplot2::geom_line(data = JHCovid19NewCasesJun7da, 
+                       mapping = aes(x = day, 
+                                     y = new_conf_07da, 
+                                     color = "darkred",
+                                     ), show.legend = FALSE) +  
     geofacet::facet_geo( ~ state_abbr, 
                        grid = "us_state_grid1",
                        scales = "free_y")  +
-    ggplot2::labs(title = "US rolling 3 and 7-day averages of new COVID cases", 
-                  subtitle = "Between 2020-05-31 and 2020-06-20",
+    ggplot2::labs(title = "US 7-day rolling average of new COVID cases", 
+                  subtitle = paste0("Between", min_date,  " and ", max_date),
                   y = "New Cases",
                   x = "Day") + 
-  ggplot2::theme_bw(base_family = "Ubuntu") +
+  hrbrthemes::theme_ipsum_tw() +
   ggplot2::theme(axis.title.x = element_blank(),
         axis.text.x = element_blank(),
-        axis.ticks.x = element_blank()) + 
-  ggplot2::theme(legend.position = "top")
+        axis.ticks.x = element_blank()) 
 ```
 
+```{r 38-gg_facet_col_line_geo_new_conf_v2, echo=FALSE}
+# fs::dir_ls("figs")
+knitr::include_graphics("figs/38-gg_facet_col_line_geo_new_conf_v2.png")
+```
 
-This plot is a *little* misleading, because we've dropped the x axis (but we've included the time period in the `subtitle`), and the `y` axis varies a bit. But we’re able to cram a lot of information into a single graphic, and see some important trends.
+These plots are a *little* misleading, because we've dropped the `x` axis (but we've included the time period in the `subtitle`), and the `y` axis varies a bit. But we’re able to cram a lot of information into a single graphic, and see some important trends.
 
 ### More notes on rolling/moving averages:
 
