@@ -1,0 +1,446 @@
+---
+title: "How to calculate a rolling average"
+author: "Martin Frigaard"
+output: github_document
+---
+
+```{r setup, include=FALSE, warning=FALSE, message=FALSE}
+library(knitr)
+library(rmdformats)
+library(tidyverse)
+library(devtools)
+# figs folder
+fs::dir_create("figs")
+# data folder
+fs::dir_create("data")
+# docs folder
+fs::dir_create("docs")
+# chunk options
+knitr::opts_chunk$set(
+  echo = TRUE, # show/hide all code
+  tidy = FALSE, # cleaner code printing
+  comment = "#> ", # better console printing
+  eval = TRUE, # turn this to FALSE stop code chunks from running
+  message = TRUE, # show messages
+  warning = FALSE, # show warnings
+  size = "small", # size of the text
+  fig.width = 8.5,
+  fig.height = 6,
+  fig.path = "figs/" # location of files
+) 
+# knit options
+knitr::opts_knit$set(
+  width = 78,
+  progress = FALSE
+)
+# base options
+base::options(
+  tibble.print_max = 25,
+  tibble.width = 78,
+  max.print = 999999,
+  scipen = 100000000
+)
+```
+
+## Rolling averages
+
+Rolling (or moving) averages are a way to reduce noise and smooth time series data. This post will cover how to compute and visualize rolling averages for the new cases and deaths of COVID patients in United States. 
+
+## Packages
+
+We'll load the packages below and set our graph theme.
+
+```{r smoothing-averages-packages, message=FALSE, warning=FALSE}
+library(ggpubr) # grid arrage
+library(zoo) # moving averages        
+library(tidyverse) # all tidyverse packages
+library(plotly) # more plots
+library(skimr) # summaries 
+library(hrbrthemes) # themes for graphs
+library(socviz) # %nin%
+library(openintro) # 
+library(geofacet) # 
+library(usmap) # lat and long
+library(socviz) # for %nin%
+library(ggmap) # mapping
+library(forecast)
+```
+
+## The Johns Hopkins COVID data 
+
+The code block below imports the COVID-19 data from [Center for Systems Science and Engineering at the Johns Hopkins Whiting School of Engineering](https://github.com/CSSEGISandData/COVID-19) using the [`fs`](https://www.tidyverse.org/blog/2018/01/fs-1.0.0/) and [`purrr`](https://purrr.tidyverse.org/) packages. 
+
+```{r csse_csv_files}
+csse_csv_files <- fs::dir_ls(path = "data/jhsph/COVID-19/csse_covid_19_data/csse_covid_19_daily_reports_us", 
+                             glob = "*.csv")
+JHCovid19DataRaw <- csse_csv_files %>%
+  purrr::map_df(.f = read_csv, .id = "file", col_types = cols()) %>% 
+    janitor::clean_names(case = "snake")
+# head(JHSPH2019CovidData)
+# only need cases by state
+JHCovid19DataRaw %>% dplyr::glimpse()
+```
+
+I'll also convert the `last_update` column to a `date` variable with some help from [`lubridate`](https://lubridate.tidyverse.org/).
+
+```{r convert-date}
+JHCovid19 <- JHCovid19DataRaw %>% 
+  dplyr::mutate(date = lubridate::as_date(last_update))
+```
+
+Next we'll get the state abbreviations by creating a crosswalk table and joining these with the `JHCovid19NewDeaths` dataset.
+
+```{r StateCrosswalk}
+StateCrosswalk <- tibble::tibble(state = state.name) %>%
+  # stick this to the abbreviations
+   dplyr::bind_cols(tibble::tibble(state_abbr = state.abb)) %>% 
+  # bind this to District of Columbia
+   dplyr::bind_rows(tibble(state = "District of Columbia", 
+                           state_abbr = "DC")) %>% 
+  dplyr::rename(province_state = state)
+head(StateCrosswalk)
+```
+Now we join the `state_abbr` column to `JHCovid19` and remove the non-states in the `JHCovid19States` dataset. 
+
+```{r JHCovid19NewDeathStates}
+JHCovid19States <- JHCovid19 %>% 
+                # join these two together
+                dplyr::inner_join(x = ., 
+                                 y = StateCrosswalk,
+                                 by = "province_state")
+# remove non-states
+JHCovid19States <- JHCovid19States %>% 
+    dplyr::filter(province_state %nin% c("American Samoa", "Diamond Princess", 
+                                         "Grand Princess", "Guam", 
+                                         "Northern Mariana Islands", 
+                                         "Puerto Rico", "Virgin Islands"))
+```
+
+Now we'll create new `month_abbr` and `day` variables, remove missing values, calculate the moving seven-day average per state, then limit these data to the month of May.
+
+```{r day-month_abbr}
+JHCovid19States <- JHCovid19States %>% 
+  # months
+  dplyr::mutate(month_abbr = lubridate::month(date, label = TRUE, 
+                                                 abbr = TRUE),
+                # day
+                day = lubridate::day(date)) %>% 
+  dplyr::rename(state = province_state) %>% 
+  dplyr::select(-c(file, country_region, uid, iso3))
+```
+
+### State-level Johns Hopkins COVID data 
+
+```{r head-JHCovid19States}
+utils::head(JHCovid19States)
+```
+
+## Calculate rolling averages
+
+Two states have [seen a rapid increase in their death rates](https://www.nytimes.com/2020/06/20/world/coronavirus-updates.html). We're going to calculate and visualize the rolling averages for cumulative deaths and new deaths in these states and compare them to the other 48 states. 
+
+To calculate a simple moving average (over 7 days), we can use the `rollmean()` function from the [zoo package.](https://cran.r-project.org/web/packages/zoo/index.html). This function takes a `k`, which is an '*integer width of the rolling window.* The code below calculates a 3, 5, 7, 15, and 21-day rolling average for the `deaths` from COVID in the US. 
+
+```{r rollmean-deaths}
+JHCovid19States <- JHCovid19States %>%
+    dplyr::arrange(desc(state)) %>% 
+    dplyr::group_by(state) %>% 
+    dplyr::mutate(death_03da = zoo::rollmean(deaths, k = 3, fill = NA),
+                  death_05da = zoo::rollmean(deaths, k = 5, fill = NA),
+                  death_07da = zoo::rollmean(deaths, k = 7, fill = NA),
+                  death_15da = zoo::rollmean(deaths, k = 15, fill = NA),
+                  death_21da = zoo::rollmean(deaths, k = 21, fill = NA)) %>% 
+  dplyr::ungroup()
+```
+
+Below is an example of this calculation for the state of Florida, 
+
+```{r Florida-death-rolling-mean}
+JHCovid19States %>% 
+  dplyr::arrange(date) %>% 
+  dplyr::filter(state == "Florida") %>% 
+  dplyr::select(state,
+                date,
+                deaths,
+                death_03da:death_07da) %>% 
+  utils::head(7)
+```
+
+The calculation works like so, 
+
+- the first value in our new `death_03da` variable (`510.3333	`) is the average `deaths` in Florida from the first date with a data point on either side of it (i.e. the date `2020-04-13` has `2020-04-12` preceding it, and `2020-04-14` following it). We can check our math below.
+
+```{r check-death_3da}
+mean(c(461, 499, 571))
+```
+
+- the first value in `death_05da` (`132.0`) is the average `deaths` in Florida from the first date with **two** data points on either side of it (`2020-04-14` has `2020-04-12` and `2020-04-13` preceding it, and `2020-04-15` and `2020-04-16` following it). We can check our math below.
+
+```{r check-death_5da}
+mean(c(461, 499, 571, 596, 668))
+```
+
+- And the first value in `death_07da` (`609.7143`) is the average `deaths` in Arizona from the first date with three data points on either side of it (`2020-04-15` has `2020-04-12`, `2020-04-13` and `2020-04-14` preceding it, and `2020-04-16`, `2020-04-17`, and `2020-04-18` following it). Check our math again:
+
+```{r check-death_07da}
+mean(c(461, 499, 571, 596, 668, 725, 748))
+```
+
+It's good practice to calculate rolling averages using an odd number for `k` (it makes the resulting values symmetrical).
+
+```{r 38-rolling-averages.png, echo=FALSE}
+knitr::include_graphics("figs/39-rolling-averages.png")
+```
+
+Each rolling mean is calculated from the numbers surrounding it. If we want to visualize and compare the three rolling means against the original raw data, we can do this with a little wrangling.
+
+```{r South-Carolina-Florida-rolling-averages-May}
+gg_fl_death_avgs <- JHCovid19States %>% 
+  dplyr::filter(state == "Florida") %>% 
+  tidyr::pivot_longer(names_to = "rolling_mean_key", 
+                    values_to = "rolling_mean_value", 
+                    cols = c(deaths, 
+                             death_03da, 
+                             death_21da)) %>%
+  dplyr::filter(date >= lubridate::as_date("2020-05-15") & # after may 15
+                  date <= lubridate::as_date("2020-06-20")) %>% # before june 20
+  ggplot2::ggplot(aes(x = date, 
+                      y = rolling_mean_value, 
+                      color = rolling_mean_key)) +
+  ggplot2::geom_line() +   
+  ggplot2::labs(title = "Florida's rolling average total COVID deaths", 
+                  subtitle = "Between 2020-05-15 and 2020-06-20",
+                  y = "Deaths", 
+                  color = "Metric",
+                  x = "Date") + 
+  hrbrthemes::theme_ipsum_rc()
+gg_sc_death_avgs <- JHCovid19States %>% 
+  dplyr::filter(state == "South Carolina") %>% 
+  tidyr::pivot_longer(names_to = "rolling_mean_key", 
+                    values_to = "rolling_mean_value", 
+                    cols = c(deaths, 
+                             death_03da, 
+                             death_21da)) %>%
+  dplyr::filter(date >= lubridate::as_date("2020-05-15") & # after may 15
+                  date <= lubridate::as_date("2020-06-20")) %>% # before june 20
+  ggplot2::ggplot(aes(x = date, 
+                      y = rolling_mean_value, 
+                      color = rolling_mean_key)) +
+  ggplot2::geom_line() +   
+  ggplot2::labs(title = "South Carolina's rolling average total COVID deaths", 
+                  subtitle = "Between 2020-05-15 and 2020-06-20",
+                  y = "Deaths", 
+                  color = "Metric",
+                  x = "Date") + 
+  hrbrthemes::theme_ipsum_rc()
+```
+
+```{r 38-gg-fl-death-avgs.png, echo=FALSE}
+knitr::include_graphics("figs/38-gg-fl-death-avgs.png")
+```
+
+```{r 38-gg-sc-death-avgs, echo=FALSE}
+knitr::include_graphics("figs/38-gg-sc-death-avgs.png")
+```
+
+
+The `zoo::rollmean()` function works by successively averaging each period (`k`) together. Knowing which period (`k`) to use in `zoo::rollmean()` is a judgment call. The higher the value of `k`, the smoother the line gets, but are also sacrificing more data. If we compare the 3-day average (`death_3da`) to the 21-day average (`death_21da`), we see the line for `deaths` gets increasingly smooth. 
+
+## Calculating new cases in each state
+
+Below we get some help from [`dplyr::lag()`](https://dplyr.tidyverse.org/reference/lead-lag.html) to calculate the new cases in each state per day.
+
+```{r JHCovid19NewCases}
+JHCovid19NewCases <- JHCovid19States %>%
+  # group this by state and day
+  group_by(state, date) %>% 
+  # get total deaths per day
+  dplyr::summarize(
+    confirmed_sum = (sum(confirmed, na.rm = TRUE))) %>% 
+  # calculate 'new deaths' = todays deaths - yesterdays deaths
+  mutate(new_confirmed_cases = confirmed_sum - dplyr::lag(x = confirmed_sum, n = 1, 
+                                              order_by = date)) %>% 
+  dplyr::select(state, 
+                new_confirmed_cases, 
+                date) %>% 
+  # join back to JHCovid19
+  dplyr::left_join(., y = JHCovid19States, 
+                   by = c("state", "date")) %>% 
+  # reorganize
+  dplyr::select(state,
+                state_abbr,
+                date,
+                month_abbr,
+                day,
+                confirmed,
+                dplyr::contains("confirm"),
+                dplyr::contains("death"),
+                lat, 
+                long, 
+                dplyr::ends_with("rate"))
+# check SC
+JHCovid19NewCases %>% 
+  dplyr::filter(state == "South Carolina") %>% 
+  dplyr::select(state_abbr, date, confirmed, new_confirmed_cases) %>% 
+  utils::head()
+```
+
+We can check this math below, too.
+
+```{r check-new_deaths}
+3391 - 3320 # 2020-04-13
+3553 - 3391 # 2020-04-14
+3656 - 3553  # 2020-04-15
+3931 - 3656 # 2020-04-16
+4099 - 3931  # 2020-04-17
+```
+
+Now we can calculate the rolling mean for the new confirmed cases in each state. 
+
+```{r rollmean-new_confirmed_cases}
+JHCovid19NewCases <- JHCovid19NewCases %>%
+    dplyr::group_by(state) %>% 
+    dplyr::mutate(
+      new_conf_03da = zoo::rollmean(new_confirmed_cases, k = 3, fill = NA),
+      new_conf_05da = zoo::rollmean(new_confirmed_cases, k = 5, fill = NA),
+      new_conf_07da = zoo::rollmean(new_confirmed_cases, k = 7, fill = NA),
+      new_conf_15da = zoo::rollmean(new_confirmed_cases, k = 15, fill = NA),
+      new_conf_21da = zoo::rollmean(new_confirmed_cases, k = 21, fill = NA)) %>% 
+  dplyr::ungroup()
+```
+
+
+## Moving averages with geofacets 
+
+We'll take a look at the seven-day moving averages of people hospitalized across all states using the [`geofacet`](https://hafen.github.io/geofacet/) package. 
+
+```{r Florida-JHCovid19NewCases}
+gg_fl_new_case_avgs <- JHCovid19NewCases %>% 
+  dplyr::filter(state == "Florida") %>% 
+  tidyr::pivot_longer(names_to = "new_conf_av_key", 
+                    values_to = "new_conf_av_value", 
+                    cols = c(new_conf_03da,
+                             new_conf_05da,
+                             new_conf_07da)) %>%
+  dplyr::filter(date >= lubridate::as_date("2020-06-01") & # after june 1
+                  date <= lubridate::as_date("2020-06-20")) %>% # before june 20
+  ggplot2::ggplot(aes(x = day, 
+                      y = new_conf_av_value, 
+                      color = new_conf_av_key,
+                      group(date))) +
+  ggplot2::geom_line() +   
+  ggplot2::labs(title = "Florida's new COVID cases", 
+                  subtitle = "Rolling average between 2020-06-01 and 2020-06-20",
+                  y = "New Deaths", 
+                  color = "Metric",
+                  x = "Day") + 
+  hrbrthemes::theme_modern_rc()
+
+gg_sc_new_case_avgs <- JHCovid19NewCases %>% 
+  dplyr::filter(state == "South Carolina") %>% 
+  tidyr::pivot_longer(names_to = "new_conf_av_key", 
+                    values_to = "new_conf_av_value", 
+                    cols = c(new_conf_03da,
+                             new_conf_05da,
+                             new_conf_07da)) %>%
+  dplyr::filter(date >= lubridate::as_date("2020-06-01") & # after june 1
+                  date <= lubridate::as_date("2020-06-20")) %>% # before june 20
+  ggplot2::ggplot(aes(x = day, 
+                      y = new_conf_av_value, 
+                      color = new_conf_av_key,
+                      group(date))) +
+  ggplot2::geom_line() +   
+  ggplot2::labs(title = "South Carolina's new COVID cases", 
+                  subtitle = "Rolling average between 2020-06-01 and 2020-06-20",
+                  y = "New Deaths", 
+                  color = "Metric",
+                  x = "Day") + 
+  hrbrthemes::theme_modern_rc()
+```
+
+```{r 38-gg_fl_new_case_avgs.png, echo=FALSE}
+knitr::include_graphics("figs/38-gg_fl_new_case_avgs.png")
+```
+
+```{r 38-gg_sc_new_case_avgs, echo=FALSE}
+knitr::include_graphics("figs/38-gg_sc_new_case_avgs.png")
+```
+
+We can see that the blue (7-day average) of new confirmed cases is definitely the smoothest line. Let's compare it to the 7-day average using a `geofacet` plot below. I like to combine this with [`hrbrthemes::theme_ipsum_tw()`](https://hrbrmstr.github.io/hrbrthemes/). 
+
+```{r facet_geo-new_conf_07da}
+gg_facet_geo_new_conf <- JHCovid19NewCases %>% 
+  # on/after may 31
+  dplyr::filter(date >= lubridate::as_date("2020-05-31") & 
+                   # on/before june 21
+                  date <= lubridate::as_date("2020-06-21")) %>%
+    # reshape this for two rolling averages
+    tidyr::pivot_longer(names_to = "new_conf_av_key", 
+                    values_to = "new_conf_av_value", 
+                    cols = c(new_conf_03da,
+                             new_conf_07da)) %>% 
+  # better labels for printing
+  dplyr::mutate(new_conf_av_key = dplyr::case_when(
+    new_conf_av_key == "new_conf_03da" ~ "3-day new confirmed cases",
+    new_conf_av_key == "new_conf_07da" ~ "7-day new confirmed cases",
+    TRUE ~ NA_character_)) %>% 
+  ggplot2::ggplot(aes(x = day, 
+                      y = new_conf_av_value, 
+                      color = new_conf_av_key,
+                      group(date))) +
+  ggplot2::geom_line() +   
+  geofacet::facet_geo( ~ state_abbr, 
+                       grid = "us_state_grid1", 
+                       scales = "free_y")  +
+    ggplot2::labs(title = "US rolling 3 and 7-day averages of new COVID cases", 
+                  subtitle = "Between 2020-05-31 and 2020-06-20",
+                  y = "New Cases",
+                  color = "Metric", 
+                  x = "Day") + 
+    hrbrthemes::theme_ipsum_tw() +
+    scale_y_discrete(labels = c("3-day average", "7-day average")) +
+    ggplot2::theme(legend.position = "top")
+```
+
+```{r gg_facet_geo_new_conf, echo=FALSE}
+knitr::include_graphics("figs/38-gg_facet_geo_new_conf.png")
+```
+
+I can also compare this with the 3 and 7-day rolling average deaths per state. 
+
+```{r gg_facet_geo_deaths}
+gg_facet_geo_deaths <- JHCovid19States %>% 
+  # on/after june 1
+  dplyr::filter(date >= lubridate::as_date("2020-06-01") & 
+                  # on/before june 21
+                date <= lubridate::as_date("2020-06-21")) %>% 
+  dplyr::select(`7-day average deaths` = death_07da,
+                dplyr::everything()) %>% 
+  ggplot2::ggplot(aes(x = day, 
+                      y = `7-day average deaths`)) +
+  ggplot2::geom_line(show.legend = FALSE) +   
+  geofacet::facet_geo( ~ state_abbr, 
+                       grid = "us_state_grid1", 
+                       scales = "free_y")  +
+    ggplot2::labs(title = "US 7-day averages of COVID deaths", 
+                  subtitle = "Between 2020-06-01 and 2020-06-21",
+                  y = "Deaths",
+                  x = "Day") + 
+    hrbrthemes::theme_ipsum_ps()
+```
+
+
+```{r 38-gg_facet_geo_deaths, echo=FALSE}
+knitr::include_graphics("figs/38-gg_facet_geo_deaths.png")
+```
+
+### More notes on rolling/moving averages:
+
+- "*A moving average term in a time series model is a past error (multiplied by a coefficient). Moving average is also used to smooth the series. It does this be removing noise from the time series by successively averaging terms together*" - Machine Learning Using R: With Time Series and Industry-Based Use Cases in R 
+
+- ["*Moving averages is a smoothing approach that averages values from a window of consecutive time periods, thereby generating a series of averages. The moving average approaches primarily differ based on the number of values averaged, how the average is computed, and how many times averaging is performed*"](https://uc-r.github.io/ts_moving_averages).
+
+- [*"To compute the moving average of size k at a point p, the k values symmetric about p are averaged together which then replace the current value. The more points are considered for computing the moving average, the smoother the curve becomes.*"](http://www.feat.engineering/reducing-other-noise.html)
+
+
+
