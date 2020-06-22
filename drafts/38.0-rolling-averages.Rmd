@@ -3,7 +3,7 @@ title: "How to calculate a rolling average"
 author: "Martin Frigaard"
 output: 
   github_document: 
-    df_print: kable
+    df_print: tibble
 ---
 
 ```{r setup, include=FALSE, warning=FALSE, message=FALSE}
@@ -25,9 +25,8 @@ knitr::opts_chunk$set(
   eval = TRUE, # turn this to FALSE stop code chunks from running
   message = TRUE, # show messages
   warning = FALSE, # show warnings
-  size = "small", # size of the text
-  fig.width = 8.5,
-  fig.height = 6,
+  fig.width = 10,
+  fig.height = 8,
   fig.path = "figs/" # location of files
 ) 
 # knit options
@@ -97,7 +96,7 @@ utils::head(JHCovid19States)
 
 ## Calculating rolling averages
 
-Two states have [seen a rapid increase in their death rates](https://www.nytimes.com/2020/06/20/world/coronavirus-updates.html). We're going to calculate and visualize the rolling averages for cumulative deaths and new deaths in these states and compare them to the other 48 states. 
+Two states (Florida and South Carolina) have [seen an increase in their death rates](https://www.nytimes.com/2020/06/20/world/coronavirus-updates.html). We're going to calculate and visualize the rolling averages for cumulative deaths and new deaths in these states and compare them to the other 48 states. 
 To calculate a simple moving average (over 7 days), we can use the `rollmean()` function from the [zoo package.](https://cran.r-project.org/web/packages/zoo/index.html). This function takes a `k`, which is an '*integer width of the rolling window.* The code below calculates a 3, 5, 7, 15, and 21-day rolling average for the `deaths` from COVID in the US. 
 
 ```{r rollmean-deaths}
@@ -292,7 +291,7 @@ JHCovid19NewCasesJun <- JHCovid19NewCases %>%
                   date <= lubridate::as_date("2020-06-20")) # before june 20
 ```
 
-This creates a [`ggplot2::geom_col()`](https://ggplot2.tidyverse.org/reference/geom_bar.html) for `new_confirmed_cases`. 
+Then we will create a [`ggplot2::geom_col()`](https://ggplot2.tidyverse.org/reference/geom_bar.html) for `new_confirmed_cases`. 
 
 We will build these two graphs with [`hrbrthemes::theme_modern_rc()`](https://github.com/hrbrmstr/hrbrthemes).
 
@@ -425,8 +424,32 @@ JHCovid19NewCasesJun %>%
 knitr::include_graphics("figs/38-gg_facet_col_line_geo_new_conf.png")
 ```
 
+We can also drop the y axis and columns to compare the means with `geom_line()`s.
 
-This plot is a *little* misleading, because the `y` axis varies, but we're able to cram a lot of information into a single graphic (and see some overall trends).
+```{r}
+# get min and max for labels
+min_date <- min(JHCovid19NewCasesJun$date, na.rm = TRUE)
+max_date <- max(JHCovid19NewCasesJun$date, na.rm = TRUE)
+JHCovid19NewCasesJun %>% 
+    ggplot2::ggplot(aes(x = day, 
+                        y = new_conf_07da)) +
+    ggplot2::geom_line(color = "darkred") +  
+    geofacet::facet_geo( ~ state_abbr, 
+                       grid = "us_state_grid1",
+                       scales = "free_y")  +
+    ggplot2::labs(title = "US rolling 3 and 7-day averages of new COVID cases", 
+                  subtitle = "Between 2020-05-31 and 2020-06-20",
+                  y = "New Cases",
+                  x = "Day") + 
+  ggplot2::theme_bw(base_family = "Ubuntu") +
+  ggplot2::theme(axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) + 
+  ggplot2::theme(legend.position = "top")
+```
+
+
+This plot is a *little* misleading, because we've dropped the x axis (but we've included the time period in the `subtitle`), and the `y` axis varies a bit. But we’re able to cram a lot of information into a single graphic, and see some important trends.
 
 ### More notes on rolling/moving averages:
 
